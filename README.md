@@ -19,6 +19,23 @@ code snippets for security vulnerabilities and check how accurate it is.
 
 `gemini-3.5-flash-lite`
 
+
+## Backend API (FastAPI)
+
+From the project folder:
+
+    cd backend
+    uvicorn server:app --reload
+
+- `GET /health` checks the server is running.
+- `POST /api/review` with `{"code": "..."}` returns Gemini's security review.
+- Interactive docs: http://127.0.0.1:8000/docs
+
+Design notes:
+- The API key stays on the server (`.env`) and is never sent to a client.
+- Input is limited to 5000 characters to protect the free-tier quota.
+- Errors return a generic message so internal details don't leak.
+
 ## Experiments
 
 ### 1. SQL injection
