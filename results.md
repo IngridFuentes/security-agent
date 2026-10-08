@@ -15,19 +15,19 @@ As a security reviewer, here is my assessment of the provided Python code.
 
 ### Vulnerability: SQL Injection (SQLi)
 
-*   **Explanation:** The code constructs a SQL query by directly concatenating the user-supplied `username` variable into the SQL string. If an attacker inputs a malicious string (e.g., `' OR '1'='1`), they can alter the structure of the query, potentially bypassing authentication, viewing unauthorized data, modifying, or deleting the database contents.
-*   **Suggested Fix:** Use parameterized queries (prepared statements). This ensures that the database driver treats the user input strictly as data, not as executable SQL code.
+**Explanation:**
+The code constructs an SQL query by directly concatenating the user-supplied `username` variable into the SQL string. If an attacker inputs a specially crafted string (e.g., `' OR '1'='1`), they can alter the structure of the query, bypass authentication, extract unauthorized data, or potentially modify/delete data in the database.
 
-#### Secure Code Example:
+**Fix:**
+Use parameterized queries (prepared statements). This ensures that the database driver treats the user input strictly as data, not as executable SQL code.
 
-Depending on the database library you are using (e.g., `sqlite3`, `psycopg2`, `mysql.connector`), the syntax for placeholders might vary slightly (usually `?` or `%s`), but the concept remains the same:
+**Secure Code Example:**
 
 ```python
 def get_user(db, username):
-    # Using '?' as a placeholder (standard for sqlite3)
-    query = "SELECT * FROM users WHERE name = ?"
-    
-    # Pass the parameters as a tuple/list to the execute method
+    # Use parameterized query (syntax may vary slightly depending on the database library, 
+    # e.g., '?' for SQLite, '%s' or '?' for MySQL/PostgreSQL)
+    query = "SELECT * FROM users WHERE name = %s"
     return db.execute(query, (username,))
 ```
 
@@ -48,32 +48,34 @@ def ping_host(user_input):
 ### Response
 As a security reviewer, here is my assessment of the provided Python code:
 
-### Vulnerability: Command Injection (RCE - Remote Code Execution)
+### Vulnerability: Command Injection
 
-*   **Explanation:** The function directly concatenates `user_input` into a string passed to `os.system()`, which executes shell commands. If a malicious user supplies input like `8.8.8.8; rm -rf /` or uses pipe characters (`|`), the underlying operating system will execute the injected command with the privileges of the Python process.
-*   **Fix:** Avoid using `os.system()` with shell-based string concatenation. Instead, use the `subprocess` module with a list of arguments, and ideally, validate that the input conforms to a valid IP address or hostname format before executing.
+**Explanation:**
+The function `ping_host` takes direct `user_input` and concatenates it into a string passed to `os.system()`. This function executes the command in a system shell. Because the input is not sanitized or validated, an attacker can input malicious shell commands alongside (or instead of) a hostname. 
 
-### Secure Code Example:
+For example, if the user inputs `8.8.8.8; cat /etc/passwd`, the resulting command executed by the OS will be:
+`ping -c 1 8.8.8.8; cat /etc/passwd`
+This allows an attacker to execute arbitrary system commands with the privileges of the running Python process.
+
+**Suggested Fix:**
+Avoid using `os.system()` with shell-based string concatenation. Instead, use the `subprocess` module and pass arguments as a list. By setting `shell=False` (the default), the operating system will treat the input strictly as an argument to the `ping` command rather than interpreting shell metacharacters (like `;`, `&`, or `|`).
+
+**Secure Code Example:**
 
 ```python
 import subprocess
-import ipaddress
 
 def ping_host(user_input):
-    # Option 1: Validate that the input is a valid IPv4 or IPv6 address
+    # Pass the command and arguments as a list. 
+    # shell=False (default) prevents shell injection.
     try:
-        ipaddress.ip_address(user_input)
-    except ValueError:
-        return "Invalid IP address provided."
-
-    # Option 2: Use subprocess with a list of arguments (prevents shell injection)
-    # shell=False (default) ensures the arguments are passed directly to the binary, not a shell.
-    try:
-        subprocess.run(["ping", "-c", "1", user_input], check=True)
+        subprocess.run(["ping", "-c", "1", user_input], check=True, shell=False)
         return "Ping sent"
     except subprocess.CalledProcessError:
         return "Ping failed"
 ```
+
+*Additional Best Practice:* Even with `subprocess` (when `shell=False`), it is still recommended to validate `user_input` using a regular expression to ensure it conforms to a valid IPv4/IPv6 address or a standard domain name format before passing it to the system.
 
 ## weak_hash_and_secret
 
@@ -92,47 +94,53 @@ def store_password(password):
 
 
 ### Response
-As a security reviewer, I have examined the provided Python code. Here is the review detailing the vulnerabilities found, along with brief explanations and suggested fixes.
+As a security reviewer, here is my assessment of the provided Python code. I have identified two primary security vulnerabilities.
 
 ---
 
 ### 1. Hardcoded API Secret
-* **Vulnerability:** **Hardcoded Credentials / Secrets Management**
-* **Explanation:** The variable `API_SECRET = "sk-live-12345abcde"` is stored in plain text directly in the source code. If this code is committed to a Version Control System (like Git), the secret is exposed to anyone with access to the repository, including malicious actors if the repo is public.
-* **Fix:** Remove the hardcoded secret from the code and load it dynamically from an environment variable or a secure secret management service (e.g., AWS Secrets Manager, HashiCorp Vault).
+* **Vulnerability:** **Hardcoded Credentials / Sensitive Data Exposure**
+* **Explanation:** The variable `API_SECRET = "sk-live-12345abcde"` is stored in plain text directly within the source code. If this code is committed to a Version Control System (like Git)—especially a public repository—anyone can extract this secret and gain unauthorized access to the live service.
+* **Fix:** Remove the secret from the source code. Load it securely using environment variables or a dedicated secrets manager (e.g., AWS Secrets Manager, HashiCorp Vault).
 
   ```python
   import os
 
   API_SECRET = os.environ.get("API_SECRET")
-  if not API_SECRET:
-      raise ValueError("API_SECRET environment variable is not set.")
-```
+  ```
 
 ---
 
-### 2. Use of Cryptographically Broken Hashing Algorithm (MD5)
-* **Vulnerability:** **Use of a Broken or Risky Cryptographic Algorithm**
-* **Explanation:** The code uses `hashlib.md5()` to hash passwords. MD5 is cryptographically broken and extremely fast to compute. Attackers can easily use modern GPUs, rainbow tables, or brute-force methods to crack MD5 hashes and recover the original plain-text passwords. Furthermore, it lacks "salt" (random data added to each password before hashing), which leaves it vulnerable to pre-computed rainbow table attacks.
-* **Fix:** Use a modern, slow, salted password-hashing algorithm designed specifically for password storage, such as **Argon2**, **bcrypt**, or **PBKDF2**. In Python, the `bcrypt` or `argon2-cffi` libraries are standard choices. If sticking to the standard library, `hashlib.pbkdf2_hmac` can be used.
+### 2. Insecure Hashing Algorithm for Passwords
+* **Vulnerability:** **Use of Broken/Insecure Cryptographic Hash Function (MD5)**
+* **Explanation:** `hashlib.md5` is cryptographically broken and exceptionally fast to compute. Attackers can use modern GPUs and precomputed rainbow tables to reverse or brute-force MD5 hashes of passwords almost instantly. Passwords require a slow, salted hashing algorithm.
+* **Fix:** Use a modern, computationally expensive password-hashing algorithm designed specifically for credentials, such as **Argon2**, **bcrypt**, or **PBKDF2**. In Python, the `bcrypt` or `argon2-cffi` libraries are standard. Using Python's built-in `hashlib.pbkdf2_hmac` is also acceptable if external libraries cannot be installed.
 
-  *Example using `hashlib.pbkdf2_hmac` (Standard Library):*
+  *Example using `bcrypt`:*
   ```python
-  import hashlib
-  import os
+  import bcrypt
 
+  def store_password(password: str) -> str:
+      # Generate a salt and hash the password securely
+      salt = bcrypt.gensalt()
+      hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
+      return hashed.decode('utf-8')
+  ```
 
-  def store_password(password):
-      # Generate a random 16-byte salt
-      salt = os.urandom(16)
+---
 
-      # Use PBKDF2 with SHA-256 and 100,000 iterations
-      hashed = hashlib.pbkdf2_hmac(
-          "sha256", password.encode("utf-8"), salt, 100000
-      )
+### Summary of Fixed Code
 
-      # Store both the salt and the hash (e.g., encoded in hex)
-      return salt.hex() + ":" + hashed.hex()
+```python
+import os
+import bcrypt
+
+# Load sensitive config from environment variables
+API_SECRET = os.environ.get("API_SECRET")
+
+def store_password(password: str) -> str:
+    # Use bcrypt with an automatic salt for secure password hashing
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
+    return hashed.decode('utf-8')
 ```
-
-  *(Even better: Use the third-party `bcrypt` library, which handles salting and work-factors automatically).*
