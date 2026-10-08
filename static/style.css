@@ -92,3 +92,60 @@ pre {
     color: #dc2626;
     font-weight: 600;
 }
+
+/* Markdown Output Styles */
+.markdown-body {
+    line-height: 1.6;
+    color: #1f2937;
+}
+
+.markdown-body h3 {
+    margin-top: 24px;
+    margin-bottom: 12px;
+    color: #b91c1c; /* Security alert red */
+    border-bottom: 2px solid #fee2e2;
+    padding-bottom: 6px;
+    font-size: 1.25rem;
+}
+
+.markdown-body p {
+    margin-bottom: 16px;
+}
+
+.markdown-body strong {
+    color: #111827;
+}
+
+.markdown-body code {
+    background-color: #f3f4f6;
+    color: #1f2937;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: "Courier New", Courier, monospace;
+    font-size: 0.9em;
+}
+
+.markdown-body pre {
+    background-color: #0f172a;
+    color: #f8fafc;
+    padding: 16px;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 16px 0;
+}
+
+.markdown-body pre code {
+    background-color: transparent;
+    color: inherit;
+    padding: 0;
+}
+
+.markdown-body ul, .markdown-body ol {
+    margin-bottom: 16px;
+    padding-left: 24px;
+}
+
+.markdown-body em {
+    color: #6b7280;
+    font-size: 0.9em;
+}

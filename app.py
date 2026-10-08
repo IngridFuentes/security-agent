@@ -31,13 +31,23 @@ async def review_code(request: CodeReviewRequest):
     if not request.code.strip():
         raise HTTPException(status_code=400, detail="Code snippet cannot be empty.")
 
-    prompt = f"""You are a security reviewer. Review this {request.language} code.
-List any vulnerabilities, explain each one briefly, and suggest a fix.
-
-{request.code}"""
+    prompt = (
+        f"You are an expert AppSec security reviewer. Review this {request.language} code.\n\n"
+        "Structure your response clearly using this format for every issue found:\n"
+        "### Vulnerability: [Vulnerability Name]\n"
+        "**Severity:** [High/Medium/Low]\n\n"
+        "**Explanation:**\n"
+        "[Brief explanation of the risk]\n\n"
+        "**Suggested Fix:**\n"
+        "[Explanation of how to mitigate]\n\n"
+        "**Secure Code Example:**\n"
+        "Provide fixed code in a formatted block.\n\n"
+        f"Code snippet to review:\n{request.code}"
+    )
 
     try:
         response = client.models.generate_content(model=MODEL, contents=prompt)
         return {"review": response.text}
     except Exception as e:
+        print(f"API Execution Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))

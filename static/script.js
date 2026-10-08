@@ -50,7 +50,13 @@ form.addEventListener('submit', async (e) => {
         }
 
         const data = await response.json();
-        output.textContent = typeof data.review === 'string' ? data.review : JSON.stringify(data, null, 2);
+        
+        // Parse markdown text directly into HTML
+        if (data.review) {
+            output.innerHTML = marked.parse(data.review);
+        } else {
+            output.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+        }
     } catch (err) {
         errorMessage.textContent = `Error: ${err.message}`;
         errorMessage.classList.remove('hidden');
