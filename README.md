@@ -1,4 +1,4 @@
-# Gemini Security Code Review Experiment
+# Gemini Security Code Review Test
 
 A small experiment using the Gemini API (Python, `google-genai`) to review
 code snippets for security vulnerabilities and check how accurate it is.
