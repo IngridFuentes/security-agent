@@ -54,9 +54,12 @@ def get_user(db, username):
    I expect Gemini to say this is SQL injection, because the username is added directly into the query string.
 - **Prompt:** 
    "You are a security reviewer. Review this Python code. List any vulnerabilities, explain each one briefly, and suggest a fix."
-- **Response (summary):** (2-3 sentences of what Gemini said)
+- **Response (summary):**
+   The code constructs a SQL query by directly concatenating the user-supplied `username` variable into the SQL string. If an attacker inputs a malicious string (e.g., `' OR '1'='1`), they can manipulate the query logic, bypass authentication, or extract, modify, or delete data from the database.
 - **Got right:**
+   The response is right.
 - **Missed:**
+
 - **Claimed without evidence:**
 
 ### 2. Command injection
@@ -81,10 +84,14 @@ def ping_host(user_input):
 
 - **My expectation:**
 I expect Gemini to say this is command injection, explain that ; or && can add commands, and suggest subprocess.run with a list of arguments.
-- **Response (summary):** TODO
-- **Got right:** TODO
-- **Missed:** TODO
-- **Claimed without evidence:** TODO
+- **Response (summary):**
+   The function `ping_host` takes `user_input` directly and concatenates it into a string executed by `os.system()`, which passes the command to the underlying shell. Because there is no input validation or sanitization, an attacker can supply malicious payloads (e.g., using command separators like `;`, `&&`, or `|`) to execute arbitrary system commands with the privileges of the Python process.
+- **Got right:**  
+   The explanation seems right.
+- **Missed:** 
+
+- **Claimed without evidence:**
+
 
 
 ### 3. Weak password hashing and hardcoded secret
@@ -118,11 +125,17 @@ def store_password(password):
 ```
 
 - **My expectation:**
-I expect Gemini to find both problems. I'm not sure whether it will mention the missing salt.
-- **Response (summary):** TODO
-- **Got right:** TODO
-- **Missed:** TODO
-- **Claimed without evidence:** TODO
+   I expect Gemini to find both problems. I'm not sure whether it will mention the missing salt.
+- **Response (summary):**
+   The variable `API_SECRET` contains a live secret key stored directly in the source code. Anyone with access to the repository (developers, malicious actors, or automated scanners) can extract this key, leading to unauthorized access to the underlying service.
+
+   The code uses `hashlib.md5()` to hash passwords. MD5 is cryptographically broken and extremely fast to compute. Attackers can use modern GPUs and rainbow tables to quickly reverse MD5 hashes or perform brute-force attacks to recover the original passwords. Passwords should never be hashed with fast, non-salted algorithms like MD5 or SHA-256.
+
+- **Got right:**
+   The answer seems right.
+- **Missed:**
+
+- **Claimed without evidence:**
 
 Full prompts and responses are in [`results.md`](results.md).
 
@@ -132,5 +145,6 @@ Gemini said ___. I checked it using ___ and found ___.
 
 ## Reflection
 
-What Gemini did well, what it got wrong, and whether I would trust it for
-security reviews.
+Gemini correctly identified the vulnerability in all three snippets: SQL injection, command injection, and weak password hashing with a hardcoded secret. For each one it explained the risk and suggested a fix.
+
+I would trust Gemini as a first pass, but not as the only reviewer. These snippets were short and well-known, so they are easy cases. Real code is longer and more complex, and the model could miss a vulnerability or state something wrong with confidence. I would always verify its claims against sources like OWASP and review the code myself before relying on it.
