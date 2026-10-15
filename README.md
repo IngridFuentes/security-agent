@@ -5,7 +5,7 @@ code snippets for security vulnerabilities and check how accurate it is.
 
 ## Setup
 
-1. Clone the repo and enter the folder.
+1. Clone the repo. Move to the correct folder.
 2. Create and activate a virtual environment:
    `python3 -m venv .venv` then `source .venv/bin/activate`
    (Windows: `.venv\Scripts\activate`)
