@@ -24,8 +24,7 @@ code snippets for security vulnerabilities and check how accurate it is.
 
 From the project folder:
 
-    cd backend
-    uvicorn server:app --reload
+    uvicorn app:app --reload
 
 - `GET /health` checks the server is running.
 - `POST /api/review` with `{"code": "..."}` returns Gemini's security review.
@@ -73,11 +72,7 @@ def get_user(db, username):
    "You are a security reviewer. Review this Python code. List any vulnerabilities, explain each one briefly, and suggest a fix."
 - **Response (summary):**
    The code constructs a SQL query by directly concatenating the user-supplied `username` variable into the SQL string. If an attacker inputs a malicious string (e.g., `' OR '1'='1`), they can manipulate the query logic, bypass authentication, or extract, modify, or delete data from the database.
-- **Got right:**
-   The response is right.
-- **Missed:**
 
-- **Claimed without evidence:**
 
 ### 2. Command injection
 
@@ -103,12 +98,6 @@ def ping_host(user_input):
 I expect Gemini to say this is command injection, explain that ; or && can add commands, and suggest subprocess.run with a list of arguments.
 - **Response (summary):**
    The function `ping_host` takes `user_input` directly and concatenates it into a string executed by `os.system()`, which passes the command to the underlying shell. Because there is no input validation or sanitization, an attacker can supply malicious payloads (e.g., using command separators like `;`, `&&`, or `|`) to execute arbitrary system commands with the privileges of the Python process.
-- **Got right:**  
-   The explanation seems right.
-- **Missed:** 
-
-- **Claimed without evidence:**
-
 
 
 ### 3. Weak password hashing and hardcoded secret
@@ -148,17 +137,9 @@ def store_password(password):
 
    The code uses `hashlib.md5()` to hash passwords. MD5 is cryptographically broken and extremely fast to compute. Attackers can use modern GPUs and rainbow tables to quickly reverse MD5 hashes or perform brute-force attacks to recover the original passwords. Passwords should never be hashed with fast, non-salted algorithms like MD5 or SHA-256.
 
-- **Got right:**
-   The answer seems right.
-- **Missed:**
-
-- **Claimed without evidence:**
 
 Full prompts and responses are in [`results.md`](results.md).
 
-## Claim I verified
-
-Gemini said ___. I checked it using ___ and found ___.
 
 ## Reflection
 
