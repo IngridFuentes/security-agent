@@ -36,7 +36,7 @@ client = genai.Client()
 results = []
 
 for name, snippet in snippets.items():
-    prompt = f"""You are a security reviewer. Review this Python code.
+    prompt = f"""You are a security reviewer. Review this code.
 List any vulnerabilities, explain each one briefly, and suggest a fix.
 
 {snippet}"""

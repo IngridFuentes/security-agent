@@ -138,7 +138,7 @@ def store_password(password):
    The code uses `hashlib.md5()` to hash passwords. MD5 is cryptographically broken and extremely fast to compute. Attackers can use modern GPUs and rainbow tables to quickly reverse MD5 hashes or perform brute-force attacks to recover the original passwords. Passwords should never be hashed with fast, non-salted algorithms like MD5 or SHA-256.
 
 
-Full prompts and responses are in [`results.md`](results.md).
+Full prompts and responses are in [`results.md`](experiments/results.md).
 
 
 ## Reflection
