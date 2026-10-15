@@ -1,54 +1,60 @@
 from dotenv import load_dotenv
 load_dotenv()
 from google import genai
+from pathlib import Path
+import time
+from google.genai import errors #added this line to import errors module after receiving high demand error from Gemini
+
 
 MODEL = "gemini-3.5-flash-lite"
 
+#finds the snippets directory relative to this file
+snippets_dir = Path(__file__).parent / "snippets"
 
-snippets = {
-    "sql_injection": '''
-def get_user(db, username):
-    query = "SELECT * FROM users WHERE name = '" + username + "'"
-    return db.execute(query)
-''',
-
-    "command_injection": '''
-import os
-
-def ping_host(user_input):
-    os.system("ping -c 1 " + user_input)
-    return "Ping sent"
-''',
-
-    "weak_hash_and_secret": '''
-import hashlib
-
-API_SECRET = "sk-live-12345abcde"
-
-def store_password(password):
-    hashed = hashlib.md5(password.encode()).hexdigest()
-    return hashed
-''',
-}
 
 client = genai.Client() 
 
 results = []
 
-for name, snippet in snippets.items():
+for file_path in sorted(snippets_dir.glob("*.py")):
+    #stem is used to get the filename without the extension
+    name = file_path.stem
+    snippet = file_path.read_text(encoding="utf-8")
+
     prompt = f"""You are a security reviewer. Review this code.
 List any vulnerabilities, explain each one briefly, and suggest a fix.
 
-{snippet}"""
+```python
+{snippet}
+```"""
 
-    response = client.models.generate_content(model=MODEL, contents=prompt)
+    for attempt in range(3):
+        try:
+            response = client.models.generate_content(
+                model=MODEL,
+                contents=prompt
+            )
+            break
+
+        except errors.ServerError as e:
+            if attempt == 2:
+                raise
+
+            print("Gemini is temporarily unavailable. Retrying...")
+            time.sleep(2 ** (attempt + 1))
 
     print(f"\n=== {name} ===")
     print(response.text)
 
     results.append(
-        f"## {name}\n\n### Prompt\n{prompt}\n\n### Response\n{response.text}\n"
+        f"## {name}\n\n"
+        f"### Prompt\n{prompt}\n\n"
+        f"### Response\n{response.text}\n"
     )
 
-with open("results.md", "w") as f:
-    f.write("\n".join(results))
+#save the results in results.md
+
+results_path = Path(__file__).parent / "results.md"
+results_path.write_text("\n".join(results), encoding="utf-8")
+
+print(f"\nResults saved to {results_path}")
