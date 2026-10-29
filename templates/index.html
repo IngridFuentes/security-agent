@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Code Review for Vulnerabilities Agent</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
     <!-- External CSS -->
     <link rel="stylesheet" href="/static/style.css">
 </head>
@@ -41,6 +42,7 @@
         </div>
 
         <button type="submit" id="submitBtn">Analyze Code</button>
+        <button type="button" id="leadsBtn" style="margin-left: 8px;">Scan with Semgrep</button>
     </form>
 
     <div id="resultsCard" class="results-card hidden">
