@@ -57,3 +57,32 @@ def leads(req: LeadsRequest):
         log.exception("Static analysis failed")
         raise HTTPException(status_code=500, detail="Static analysis failed.")
     return {"leads": [lead.model_dump() for lead in found]}
+
+# ---- Agent review endpoint ----
+import threading
+from dataclasses import asdict
+
+from backend.snippet_review import review_snippet
+
+agent_slot = threading.Semaphore(1)  # one agent run at a time (protects your quota)
+
+
+@app.post("/api/agent-review")
+def agent_review(req: LeadsRequest):
+    if not agent_slot.acquire(blocking=False):
+        raise HTTPException(status_code=429, detail="Another review is running. Try again in a moment.")
+    try:
+        result = review_snippet(req.code, req.language)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        log.exception("Agent review failed")
+        raise HTTPException(status_code=502, detail="Agent review failed. Check the server log.") #change to a better error after testing
+    finally:
+        agent_slot.release()
+    return {
+        "review": result.final_text,
+        "complete": result.complete,
+        "steps_used": result.steps_used,
+        "trace": [asdict(e) for e in result.trace],
+    }

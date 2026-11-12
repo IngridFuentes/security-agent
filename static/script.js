@@ -121,3 +121,63 @@ function renderLeads(leads) {
         output.appendChild(item);
     }
 }
+
+
+const agentBtn = document.getElementById('agentBtn');
+
+agentBtn.addEventListener('click', async () => {
+    resultsCard.classList.remove('hidden');
+    loadingText.classList.remove('hidden');
+    errorMessage.classList.add('hidden');
+    output.textContent = '';
+    agentBtn.disabled = true;
+
+    try {
+        const response = await fetch('/api/agent-review', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: codeInput.value, language: languageSelect.value })
+        });
+        if (!response.ok) {
+            const body = await response.json().catch(() => ({}));
+            throw new Error(body.detail || `Server error: ${response.status}`);
+        }
+        renderAgent(await response.json());
+    } catch (err) {
+        errorMessage.textContent = `Error: ${err.message}`;
+        errorMessage.classList.remove('hidden');
+    } finally {
+        loadingText.classList.add('hidden');
+        agentBtn.disabled = false;
+    }
+});
+
+function renderAgent(data) {
+    output.textContent = '';
+
+    if (!data.complete) {
+        const warn = document.createElement('p');
+        warn.className = 'error';
+        warn.textContent = 'The agent did not finish (step limit or error). Treat this review as incomplete.';
+        output.appendChild(warn);
+    }
+
+    const body = document.createElement('div');
+    body.className = 'markdown-body';
+    body.innerHTML = DOMPurify.sanitize(marked.parse(data.review || '(no final answer)'));
+    output.appendChild(body);
+
+    const details = document.createElement('details');
+    const summary = document.createElement('summary');
+    summary.textContent = `How the agent got here (${data.steps_used} steps)`;
+    details.appendChild(summary);
+    for (const ev of data.trace) {
+        const row = document.createElement('div');
+        row.style.fontFamily = 'monospace';
+        row.style.fontSize = '0.85em';
+        row.style.marginTop = '8px';
+        row.textContent = `[${ev.step}] ${ev.type}: ${ev.data}`;  // textContent: tool output is untrusted
+        details.appendChild(row);
+    }
+    output.appendChild(details);
+}

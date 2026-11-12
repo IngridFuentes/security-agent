@@ -6,7 +6,7 @@ import time
 from google.genai import errors #added this line to import errors module after receiving high demand error from Gemini
 
 
-MODEL = "gemini-3.5-flash-lite"
+MODEL = "gemini-3.8-flash"
 
 #finds the snippets directory relative to this file
 snippets_dir = Path(__file__).parent / "snippets"

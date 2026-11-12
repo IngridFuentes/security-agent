@@ -3,7 +3,7 @@ from google import genai
 
 load_dotenv() 
 
-MODEL = "gemini-3.5-flash-lite"  # same model as main.py (free version)
+MODEL = "gemini-3.8-flash"  # same model as main.py (free version)
 
 client = genai.Client()
 

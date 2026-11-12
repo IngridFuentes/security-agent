@@ -75,8 +75,8 @@ button:disabled {
 }
 
 pre {
-    background: #1e293b;
-    color: #f8fafc;
+    background: #f8fafe !important;
+    color: #01172e !important;
     padding: 16px;
     border-radius: 6px;
     overflow-x: auto;
@@ -96,12 +96,12 @@ pre {
 /* Markdown Output Styles */
 .markdown-body {
     line-height: 1.6;
-    color: #1f2937;
+    /* color: #1f2937; */
 }
 
 .markdown-body h3 {
-    margin-top: 24px;
-    margin-bottom: 12px;
+    margin-top: 5px;
+    margin-bottom: 1px;
     color: #b91c1c; /* Security alert red */
     border-bottom: 2px solid #fee2e2;
     padding-bottom: 6px;
@@ -109,7 +109,7 @@ pre {
 }
 
 .markdown-body p {
-    margin-bottom: 16px;
+    margin-bottom: 1px;
 }
 
 .markdown-body strong {
@@ -125,14 +125,14 @@ pre {
     font-size: 0.9em;
 }
 
-.markdown-body pre {
-    background-color: #0f172a;
-    color: #f8fafc;
+/* .markdown-body pre {
+    background-color: #d0dbec;
+    color: #00152b;
     padding: 16px;
     border-radius: 8px;
     overflow-x: auto;
     margin: 16px 0;
-}
+} */
 
 .markdown-body pre code {
     background-color: transparent;
@@ -141,7 +141,7 @@ pre {
 }
 
 .markdown-body ul, .markdown-body ol {
-    margin-bottom: 16px;
+    margin-bottom: 1px;
     padding-left: 24px;
 }
 
