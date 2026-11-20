@@ -78,6 +78,20 @@ CONFIG = types.GenerateContentConfig(
     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
 )
 
+WRAPUP_NOTE = (
+    "STEP LIMIT REACHED. Do not call any tools. Using only what you have already read, write your "
+    "final answer now in the usual format. Start with the line 'INCOMPLETE REVIEW: step limit reached.' "
+    "Report only issues you actually verified. End with 'Files read:' and 'Files not read:' lines."
+)
+
+WRAPUP_CONFIG = types.GenerateContentConfig(
+    system_instruction=SYSTEM_PROMPT,
+    tools=CONFIG.tools,
+    automatic_function_calling=CONFIG.automatic_function_calling,
+    tool_config=types.ToolConfig(
+        function_calling_config=types.FunctionCallingConfig(mode=types.FunctionCallingConfigMode.NONE)
+    ),
+)
 
 @dataclass
 class TraceEvent:
@@ -146,7 +160,7 @@ def _retry_delay(e: Exception) -> float | None:
     m = re.search(r"retry in ([\d.]+)s", str(e))
     return float(m.group(1)) + 1 if m else None
 
-def _generate(contents):
+def _generate(contents, config=CONFIG):
     """Call Gemini, retrying on overload (5xx) and rate limits (429), with backup models."""
     models = [MODEL] + FALLBACK_MODELS
     last = None
@@ -157,7 +171,7 @@ def _generate(contents):
                 time.sleep(delay)
             _throttle()
             try:
-                return client.models.generate_content(model=model, contents=contents, config=CONFIG)
+                return client.models.generate_content(model=model, contents=contents, config=config)
             except errors.ServerError as e:
                 last = e
             except errors.ClientError as e:
@@ -172,6 +186,18 @@ def _generate(contents):
                 if wait:
                     time.sleep(wait)
     raise last
+
+def _wrap_up(contents, trace: list[TraceEvent], step: int) -> AgentResult:
+    """Out of steps: ask for an answer from what has been read, with tools turned off."""
+    contents[-1].parts.append(types.Part(text=WRAPUP_NOTE))  # same turn as the last tool results
+    try:
+        response = _generate(contents, WRAPUP_CONFIG)
+        text = "" if response.function_calls else (response.text or "")
+    except Exception as e:
+        _event(trace, step, "error", f"wrap-up failed: {type(e).__name__}")
+        return AgentResult("", False, step, trace)
+    _event(trace, step, "model_text", text)
+    return AgentResult(text, False, step, trace)
 
 def review_repo(repo_path: str, leads: list[Lead], max_steps: int = MAX_STEPS) -> AgentResult:
     tools = RepoTools(repo_path)
@@ -209,7 +235,7 @@ def review_repo(repo_path: str, leads: list[Lead], max_steps: int = MAX_STEPS) -
         contents.append(types.Content(role="user", parts=parts))
 
     _event(trace, max_steps, "limit", f"stopped after {max_steps} steps")
-    return AgentResult("", False, max_steps, trace)
+    return _wrap_up(contents, trace, max_steps)
 
 
 if __name__ == "__main__":

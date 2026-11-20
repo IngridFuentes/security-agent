@@ -72,7 +72,7 @@ def scan(
 
             def on_step(n: int, tool: str, detail: str) -> None:
                 ui.step_done(n, tool, detail)
-                status.update(f"Step {n + 1}/{max_steps} thinking...")
+                status.update("Writing final answer..." if n >= max_steps else f"Step {n + 1}/{max_steps} thinking...")
 
             result = run_review(target, leads, max_steps, on_step, ui.note)
     except Exception as e:

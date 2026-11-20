@@ -29,11 +29,12 @@ class ScriptedModel:
     def __init__(self, *replies):
         self.replies = list(replies)
         self.sent = []
+        self.configs = []
 
-    def __call__(self, contents):
+    def __call__(self, contents, config=None):
         self.sent.append(list(contents))
+        self.configs.append(config)
         return self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
-
 
 @pytest.fixture
 def repo(tmp_path):
@@ -79,8 +80,8 @@ def test_stops_at_max_steps(monkeypatch, repo):
     result = run(monkeypatch, repo, model, max_steps=3)
     assert result.complete is False
     assert result.steps_used == 3
-    assert len(model.sent) == 3
-    assert result.trace[-1].type == "limit"
+    assert len(model.sent) == 4  # 3 steps + 1 wrap-up call
+    assert any(e.type == "limit" for e in result.trace)
 
 
 def test_empty_model_response_ends_cleanly(monkeypatch, repo):
@@ -195,3 +196,33 @@ def test_list_files_filters_by_extension(tmp_path):
 
 def test_list_files_cannot_leave_the_repo(tmp_path):
     assert RepoTools(str(tmp_path)).list_files("../").startswith("ERROR")
+
+def test_wrap_up_gives_an_answer_when_steps_run_out(monkeypatch, repo):
+    model = ScriptedModel(
+        reply(call("search", query="os.system")),
+        reply(call("search", query="os.system")),
+        reply(text="INCOMPLETE REVIEW: views.py:4 command injection"),
+    )
+    result = run(monkeypatch, repo, model, max_steps=2)
+    assert result.complete is False
+    assert result.steps_used == 2
+    assert "command injection" in result.final_text
+
+
+def test_wrap_up_call_forbids_tools_and_asks_for_an_answer(monkeypatch, repo):
+    model = ScriptedModel(reply(call("search", query="os.system")), reply(text="INCOMPLETE REVIEW: none"))
+    run(monkeypatch, repo, model, max_steps=1)
+    assert model.configs[-1] is reviewer.WRAPUP_CONFIG
+    assert "STEP LIMIT REACHED" in model.sent[-1][-1].parts[-1].text
+
+
+def test_wrap_up_failure_still_returns_a_result(monkeypatch, repo):
+    def model(contents, config=None):
+        if config is reviewer.WRAPUP_CONFIG:
+            raise RuntimeError("boom")
+        return reply(call("search", query="os.system"))
+
+    result = run(monkeypatch, repo, model, max_steps=2)
+    assert result.complete is False
+    assert result.final_text == ""
+    assert result.trace[-1].type == "error"
