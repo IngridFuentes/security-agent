@@ -7,6 +7,7 @@ MAX_READ_CHARS = 8_000
 MAX_FILE_BYTES = 1_000_000
 MAX_SEARCH_RESULTS = 20
 MAX_LINE_CHARS = 300
+MAX_LIST_RESULTS = 200
 SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", ".mypy_cache"}
 
 
@@ -51,6 +52,49 @@ class RepoTools:
         if b"\x00" in data[:8192]:
             raise ToolError("binary file")
         return data.decode("utf-8", errors="replace")
+
+    def _resolve_dir(self, rel_path: str) -> Path:
+        if not isinstance(rel_path, str) or "\x00" in rel_path:
+            raise ToolError("path must be a string")
+        candidate = (self.root / (rel_path.strip() or ".")).resolve()
+        if not candidate.is_relative_to(self.root):
+            raise ToolError("path is outside the repository")
+        if any(p in SKIP_DIRS for p in candidate.relative_to(self.root).parts):
+            raise ToolError("path is in an excluded directory")
+        if not candidate.is_dir():
+            raise ToolError(f"directory not found: {rel_path}")
+        return candidate
+
+    @tool_errors
+    def list_files(self, path: str = ".", extension: str = "") -> str:
+        """List readable text files, with line counts.
+
+        Args:
+            path: Folder relative to the repo root (default: the whole repo).
+            extension: Only include files ending with this, e.g. ".py".
+        """
+        if not isinstance(extension, str):
+            raise ToolError("extension must be a string")
+        base = self._resolve_dir(path)
+
+        rows = []
+        for dirpath, dirnames, filenames in os.walk(base):
+            dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
+            for name in sorted(filenames):
+                if extension and not name.endswith(extension):
+                    continue
+                try:
+                    real = (Path(dirpath) / name).resolve()
+                    if not real.is_relative_to(self.root) or real.stat().st_size > MAX_FILE_BYTES:
+                        continue
+                    text = self._read_text(real)
+                except (ToolError, OSError):
+                    continue
+                rows.append(f"{real.relative_to(self.root)} ({len(text.splitlines())} lines)")
+                if len(rows) >= MAX_LIST_RESULTS:
+                    return "\n".join(rows) + f"\n[stopped at {MAX_LIST_RESULTS} files; narrow with path or extension]"
+        return "\n".join(rows) if rows else "no files"
+
 
     @tool_errors
     def read_lines(self, path: str, start_line: int, end_line: int) -> str:

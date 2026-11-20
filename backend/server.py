@@ -1,5 +1,9 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+import threading
+from dataclasses import asdict
+
+from backend.snippet_review import review_snippet
 import logging
 
 from backend.snippet_scan import scan_snippet
@@ -58,13 +62,12 @@ def leads(req: LeadsRequest):
         raise HTTPException(status_code=500, detail="Static analysis failed.")
     return {"leads": [lead.model_dump() for lead in found]}
 
-# ---- Agent review endpoint ----
-import threading
-from dataclasses import asdict
+# import threading
+# from dataclasses import asdict
 
-from backend.snippet_review import review_snippet
+# from backend.snippet_review import review_snippet
 
-agent_slot = threading.Semaphore(1)  # one agent run at a time (protects your quota)
+agent_slot = threading.Semaphore(1)  # one agent run at a time (protects my quota)
 
 
 @app.post("/api/agent-review")
