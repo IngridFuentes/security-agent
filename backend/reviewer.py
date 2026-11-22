@@ -31,7 +31,8 @@ Rules:
 3. Report only what you verified by reading the code. Cite file paths and line numbers exactly as you saw them in tool results.
 4. You have a limited number of steps. Start with the highest-severity leads and treat leads that describe the same problem as one issue.
 5. When finished, call submit_report exactly once with every issue you verified: file, start_line, end_line, severity (low, medium, high or critical), cwe (like "CWE-78"), title, explanation, evidence (one line of code copied exactly from the file at those lines), fix, confidence (0 to 1), and the lead ids it came from. Use an empty findings list if you found nothing. In summary, say in a sentence or two which leads you judged to be false positives and why, and name any files you did not read. Never say you reviewed the whole repository unless you read every source file. If submit_report returns errors, correct those findings and call it again.
-6. Also report any other security problems you notice in code you read, such as hardcoded secrets or keys, even if no lead points at them."""
+6. Also report any other security problems you notice in code you read, such as hardcoded secrets or keys, even if no lead points at them.
+7. Judge the code as if it were deployed in production. Do not dismiss a lead or a problem because the project looks like a demo, tutorial, test, or intentionally vulnerable app. Call a lead a false positive only if the code is genuinely not vulnerable, and say why. Never cite a file you have not read."""
 
 TOOL_DECLARATIONS = [
     {
