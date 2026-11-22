@@ -86,6 +86,7 @@ def scan(
     ui.console.print()
 
     findings = result["findings"]
+    read_py = sum(1 for f in result.get("files_read", []) if f.endswith(".py"))
     if findings:
         order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
         for f in sorted(findings, key=lambda f: order.get(str(f.get("severity")).lower(), 4)):
@@ -93,7 +94,7 @@ def scan(
             ui.console.print()
         ui.print_summary(findings)
     elif result.get("structured"):
-        read = len(result.get("files_read", []))
+        read = read_py
         if read >= len(files):
             ui.console.print(Text("  ✓ No verified issues found", style="green"))
         else:
@@ -122,11 +123,11 @@ def scan(
             style="yellow",
         ))
     if result.get("files_read"):
-        ui.console.print(Text(f"  Read {len(result['files_read'])} of {len(files)} Python files", style=ui.MUTED))
+        ui.console.print(Text(f"  Read {read_py} of {len(files)} Python files", style=ui.MUTED))
 
     report.write_text(json.dumps({"target": str(target), "model": model, **result}, indent=2, default=str))
     ui.console.print(f"\n  Report saved → {report}", style=ui.MUTED)
 
     has_high = any(str(f.get("severity")).lower() in ("critical", "high") for f in findings)
-    partial = len(result.get("files_read", [])) < len(files)
+    partial = read_py < len(files)
     raise typer.Exit(1 if has_high else (2 if (not result["complete"] or partial) else 0))
