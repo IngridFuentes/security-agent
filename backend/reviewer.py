@@ -274,6 +274,8 @@ def review_repo(repo_path: str, leads: list[Lead], max_steps: int = MAX_STEPS) -
     nudged = False
 
     contents = [types.Content(role="user", parts=[types.Part(text=build_prompt(leads))])]
+    all_files = tools.source_files()
+    gated = False
 
     for step in range(1, max_steps + 1):
         response = _generate(contents)
@@ -303,8 +305,19 @@ def review_repo(repo_path: str, leads: list[Lead], max_steps: int = MAX_STEPS) -
                 result = "ERROR: too many tool calls in one step; request fewer."
             elif call.name == "submit_report":
                 findings, summary, problems = _check_report(tools, args)
+                unread = [f for f in all_files if f not in files_read]
+                steps_left = max_steps - step
                 if problems:
                     result = "ERROR: fix these findings and call submit_report again:\n" + "\n".join(problems)
+                elif unread and steps_left >= 2 and not gated:
+                    gated = True  # bounce once only
+                    result = (
+                        f"ERROR: not submitted yet. You have read only {len(files_read)} of {len(all_files)} files "
+                        f"and have {steps_left} steps left. Unread files: {', '.join(unread[:25])}"
+                        f"{' ...' if len(unread) > 25 else ''}. Read the ones most likely to handle user input, shell "
+                        "commands, SQL, file access or secrets, then call submit_report again. In summary, name any "
+                        "files you did not read."
+                    )
                 else:
                     accepted = (findings, summary)
                     result = "report accepted"

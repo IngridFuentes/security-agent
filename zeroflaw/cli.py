@@ -93,7 +93,14 @@ def scan(
             ui.console.print()
         ui.print_summary(findings)
     elif result.get("structured"):
-        ui.console.print(Text("  ✓ No verified issues found", style="green"))
+        read = len(result.get("files_read", []))
+        if read >= len(files):
+            ui.console.print(Text("  ✓ No verified issues found", style="green"))
+        else:
+            ui.console.print(Text(
+                f"  ⚠ No issues found in the {read} files read. {len(files) - read} of {len(files)} Python files were NOT reviewed.",
+                style="yellow",
+            ))
     elif result.get("text"):  # the model answered in plain text instead of submitting a report
         ui.console.print(
             Panel(
@@ -107,7 +114,8 @@ def scan(
         )
 
     if result.get("structured") and result.get("text"):
-        ui.console.print(Text(f"\n  {result['text']}", style=ui.MUTED))
+        ui.console.print(Text(f"\n  Agent's note: {result['text']}", style=ui.MUTED))
+
     if result.get("rejected"):
         ui.console.print(Text(
             f"\n  ⚠ {len(result['rejected'])} finding(s) dropped: they could not be verified against the code",
@@ -120,4 +128,5 @@ def scan(
     ui.console.print(f"\n  Report saved → {report}", style=ui.MUTED)
 
     has_high = any(str(f.get("severity")).lower() in ("critical", "high") for f in findings)
-    raise typer.Exit(1 if has_high else (0 if result["complete"] else 2))
+    partial = len(result.get("files_read", [])) < len(files)
+    raise typer.Exit(1 if has_high else (2 if (not result["complete"] or partial) else 0))

@@ -298,3 +298,18 @@ def test_check_evidence(tmp_path):
     assert "not found" in t.check_evidence("a.py", 5, 5, "eval(x)")
     assert "not near" in t.check_evidence("a.py", 1, 1, "os.system(x)")
     assert t.check_evidence("../x.py", 1, 1, "x").startswith("path is outside")
+
+def test_early_report_is_bounced_while_files_are_unread(monkeypatch, tmp_path):
+    (tmp_path / "a.py").write_text("x = 1\n")
+    (tmp_path / "b.py").write_text("y = 2\n")
+    model = ScriptedModel(submit(), submit())
+    result = run(monkeypatch, str(tmp_path), model, max_steps=5)
+    assert len(model.sent) == 2
+    assert any("Unread files" in r for r in tool_results(result))
+    assert result.complete is True and result.structured is True
+
+
+def test_report_is_accepted_at_once_when_everything_was_read(monkeypatch, repo):
+    model = ScriptedModel(reply(call("read_lines", path="views.py", start_line=1, end_line=4)), submit(finding()))
+    result = run(monkeypatch, repo, model)
+    assert len(model.sent) == 2 and len(result.findings) == 1

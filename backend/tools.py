@@ -176,3 +176,10 @@ class RepoTools:
                         if len(hits) >= limit:
                             return "\n".join(hits) + f"\n[stopped at {limit} results]"
         return "\n".join(hits) if hits else "no matches"
+
+    def source_files(self, extension: str = ".py") -> list[str]:
+        out = []
+        for dirpath, dirnames, filenames in os.walk(self.root):
+            dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
+            out += [str((Path(dirpath) / n).relative_to(self.root)) for n in sorted(filenames) if n.endswith(extension)]
+        return out

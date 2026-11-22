@@ -73,7 +73,7 @@ def note(text: str) -> None:
 
 
 def step_done(n: int, tool: str, detail: str) -> None:
-    console.print(Text.assemble(("  ✓ ", "green"), (f"Step {n}  {tool:<14} {detail}", MUTED)))
+    console.print(Text.assemble(("  ✓ ", "green"), (f"Step {n:<2}  {tool:<14} {detail}", MUTED)))
 
 
 def working(message: str):
