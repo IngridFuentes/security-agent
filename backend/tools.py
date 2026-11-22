@@ -1,6 +1,7 @@
 import functools
 import os
 from pathlib import Path
+import re
 
 MAX_LINES_PER_READ = 200
 MAX_READ_CHARS = 8_000
@@ -95,6 +96,23 @@ class RepoTools:
                     return "\n".join(rows) + f"\n[stopped at {MAX_LIST_RESULTS} files; narrow with path or extension]"
         return "\n".join(rows) if rows else "no files"
 
+
+    def check_evidence(self, file: str, start_line: int, end_line: int, evidence: str) -> str | None:
+        """None if the quoted evidence is really in the file, at or within 3 lines of the cited lines; else the reason."""
+        try:
+            lines = self._read_text(self._resolve_file(file)).splitlines()
+        except ToolError as e:
+            return str(e)
+        squash = lambda s: re.sub(r"\s+", "", s)
+        wanted = squash(evidence)
+        if not wanted:
+            return "evidence is empty; copy one line of code from the file"
+        if wanted not in squash("".join(lines)):
+            return "evidence not found in the file; copy the code exactly"
+        near = lines[max(0, start_line - 4) : end_line + 3]
+        if wanted not in squash("".join(near)):
+            return "evidence exists in the file but not near the cited lines; fix the line numbers"
+        return None
 
     @tool_errors
     def read_lines(self, path: str, start_line: int, end_line: int) -> str:

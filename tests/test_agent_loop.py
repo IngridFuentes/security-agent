@@ -53,16 +53,16 @@ def tool_results(result):
 
 # ---------- the loop ----------
 
-def test_finishes_with_final_answer(monkeypatch, repo):
-    model = ScriptedModel(
-        reply(call("read_lines", path="views.py", start_line=1, end_line=4)),
-        reply(text="views.py:4 command injection"),
-    )
-    result = run(monkeypatch, repo, model)
-    assert result.complete is True
-    assert result.steps_used == 2
-    assert "command injection" in result.final_text
-    assert [e.type for e in result.trace] == ["tool_call", "tool_result", "model_text"]
+# def test_finishes_with_final_answer(monkeypatch, repo):
+#     model = ScriptedModel(
+#         reply(call("read_lines", path="views.py", start_line=1, end_line=4)),
+#         reply(text="views.py:4 command injection"),
+#     )
+#     result = run(monkeypatch, repo, model)
+#     assert result.complete is True
+#     assert result.steps_used == 2
+#     assert "command injection" in result.final_text
+#     assert [e.type for e in result.trace] == ["tool_call", "tool_result", "model_text"]
 
 
 def test_tool_output_is_sent_back_to_the_model(monkeypatch, repo):
@@ -197,16 +197,16 @@ def test_list_files_filters_by_extension(tmp_path):
 def test_list_files_cannot_leave_the_repo(tmp_path):
     assert RepoTools(str(tmp_path)).list_files("../").startswith("ERROR")
 
-def test_wrap_up_gives_an_answer_when_steps_run_out(monkeypatch, repo):
-    model = ScriptedModel(
-        reply(call("search", query="os.system")),
-        reply(call("search", query="os.system")),
-        reply(text="INCOMPLETE REVIEW: views.py:4 command injection"),
-    )
-    result = run(monkeypatch, repo, model, max_steps=2)
-    assert result.complete is False
-    assert result.steps_used == 2
-    assert "command injection" in result.final_text
+# def test_wrap_up_gives_an_answer_when_steps_run_out(monkeypatch, repo):
+#     model = ScriptedModel(
+#         reply(call("search", query="os.system")),
+#         reply(call("search", query="os.system")),
+#         reply(text="INCOMPLETE REVIEW: views.py:4 command injection"),
+#     )
+#     result = run(monkeypatch, repo, model, max_steps=2)
+#     assert result.complete is False
+#     assert result.steps_used == 2
+#     assert "command injection" in result.final_text
 
 
 def test_wrap_up_call_forbids_tools_and_asks_for_an_answer(monkeypatch, repo):
@@ -226,3 +226,75 @@ def test_wrap_up_failure_still_returns_a_result(monkeypatch, repo):
     assert result.complete is False
     assert result.final_text == ""
     assert result.trace[-1].type == "error"
+
+def finding(**overrides):
+    base = {
+        "file": "views.py", "start_line": 4, "end_line": 4, "severity": "high", "cwe": "CWE-78",
+        "title": "Command injection", "explanation": "host is concatenated into a shell command",
+        "evidence": 'os.system("ping " + host)', "fix": "use subprocess.run with a list", "confidence": 0.9,
+    }
+    return {**base, **overrides}
+
+
+def submit(*findings, summary="done"):
+    return reply(call("submit_report", findings=list(findings), summary=summary))
+
+
+def test_submit_report_finishes_the_loop(monkeypatch, repo):
+    model = ScriptedModel(reply(call("read_lines", path="views.py", start_line=1, end_line=4)), submit(finding()))
+    result = run(monkeypatch, repo, model)
+    assert result.complete is True and result.structured is True
+    assert result.steps_used == 2
+    assert result.findings[0].cwe == "CWE-78"
+    assert result.files_read == ["views.py"]
+
+
+def test_plain_text_gets_one_nudge_then_is_accepted(monkeypatch, repo):
+    model = ScriptedModel(reply(text="done"))
+    result = run(monkeypatch, repo, model)
+    assert result.complete is True and result.structured is False
+    assert result.final_text == "done"
+    assert len(model.sent) == 2
+    assert "submit_report" in model.sent[1][-1].parts[0].text
+
+
+def test_made_up_evidence_is_sent_back_and_can_be_fixed(monkeypatch, repo):
+    model = ScriptedModel(submit(finding(evidence="eval(host)")), submit(finding()))
+    result = run(monkeypatch, repo, model)
+    assert result.complete is True and len(result.findings) == 1
+    assert any("evidence not found" in r for r in tool_results(result))
+
+
+def test_invalid_severity_is_sent_back(monkeypatch, repo):
+    model = ScriptedModel(submit(finding(severity="urgent")), submit(finding()))
+    result = run(monkeypatch, repo, model)
+    assert len(result.findings) == 1
+    assert any("severity" in r for r in tool_results(result))
+
+
+def test_wrap_up_forces_a_report_when_steps_run_out(monkeypatch, repo):
+    model = ScriptedModel(
+        reply(call("search", query="os.system")),
+        reply(call("search", query="os.system")),
+        submit(finding()),
+    )
+    result = run(monkeypatch, repo, model, max_steps=2)
+    assert result.complete is False and result.structured is True
+    assert result.steps_used == 2
+    assert len(result.findings) == 1
+    assert result.final_text.startswith("INCOMPLETE REVIEW")
+
+
+def test_wrap_up_drops_findings_it_cannot_verify(monkeypatch, repo):
+    model = ScriptedModel(reply(call("search", query="x")), submit(finding(evidence="eval(host)"), finding()))
+    result = run(monkeypatch, repo, model, max_steps=1)
+    assert len(result.findings) == 1 and len(result.rejected) == 1
+
+
+def test_check_evidence(tmp_path):
+    (tmp_path / "a.py").write_text("import os\n\n\ndef f(x):\n    os.system(x)\n")
+    t = RepoTools(str(tmp_path))
+    assert t.check_evidence("a.py", 5, 5, "os.system(x)") is None
+    assert "not found" in t.check_evidence("a.py", 5, 5, "eval(x)")
+    assert "not near" in t.check_evidence("a.py", 1, 1, "os.system(x)")
+    assert t.check_evidence("../x.py", 1, 1, "x").startswith("path is outside")

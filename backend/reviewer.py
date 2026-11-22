@@ -7,8 +7,9 @@ from dataclasses import dataclass, field
 from dotenv import load_dotenv
 from google import genai
 from google.genai import errors, types
+from pydantic import ValidationError
 
-from backend.schemas import Lead
+from backend.schemas import Finding, Lead
 from backend.tools import RepoTools
 
 load_dotenv()
@@ -29,7 +30,7 @@ Rules:
 2. Start by calling list_files to see what the repository contains. In a small repository (about 20 source files or fewer), read every source file before answering. In a larger one, start with the highest-severity leads, then files likely to handle user input, authentication, shell commands, SQL, file access, or secrets. Lead locations are exact, so read them directly with read_lines. Use search to check whether input is validated elsewhere or the same bug appears in other files.
 3. Report only what you verified by reading the code. Cite file paths and line numbers exactly as you saw them in tool results.
 4. You have a limited number of steps. Start with the highest-severity leads and treat leads that describe the same problem as one issue.
-5. When finished, answer in plain text: for each verified issue give file:lines, severity, why it is exploitable, and a fix. Also list which leads you judged to be false positives and why. End with two lines, "Files read:" and "Files not read:". Never say you reviewed the whole repository unless you read every source file.
+5. When finished, call submit_report exactly once with every issue you verified: file, start_line, end_line, severity (low, medium, high or critical), cwe (like "CWE-78"), title, explanation, evidence (one line of code copied exactly from the file at those lines), fix, confidence (0 to 1), and the lead ids it came from. Use an empty findings list if you found nothing. In summary, say in a sentence or two which leads you judged to be false positives and why, and name any files you did not read. Never say you reviewed the whole repository unless you read every source file. If submit_report returns errors, correct those findings and call it again.
 6. Also report any other security problems you notice in code you read, such as hardcoded secrets or keys, even if no lead points at them."""
 
 TOOL_DECLARATIONS = [
@@ -58,7 +59,7 @@ TOOL_DECLARATIONS = [
             "required": ["query"],
         },
     },
-        {
+    {
         "name": "list_files",
         "description": "List the readable text files in the repository, or in one subfolder, with line counts. Use this first to see what exists.",
         "parameters": {
@@ -67,6 +68,37 @@ TOOL_DECLARATIONS = [
                 "path": {"type": "string", "description": "Folder relative to the repo root; omit for the whole repo"},
                 "extension": {"type": "string", "description": "Only files ending with this, e.g. .py"},
             },
+        },
+    },
+    {
+        "name": "submit_report",
+        "description": "Submit your final list of verified findings. Call this once, when you have finished investigating.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "summary": {"type": "string", "description": "Short note: leads judged false positives (and why), and any files not read"},
+                "findings": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "file": {"type": "string", "description": "Path relative to the repo root"},
+                            "start_line": {"type": "integer"},
+                            "end_line": {"type": "integer"},
+                            "severity": {"type": "string", "enum": ["low", "medium", "high", "critical"]},
+                            "cwe": {"type": "string", "description": "Like CWE-78"},
+                            "title": {"type": "string"},
+                            "explanation": {"type": "string", "description": "Why it is exploitable"},
+                            "evidence": {"type": "string", "description": "One line of code copied exactly from the file"},
+                            "fix": {"type": "string"},
+                            "confidence": {"type": "number", "description": "0 to 1"},
+                            "lead_ids": {"type": "array", "items": {"type": "string"}},
+                        },
+                        "required": ["file", "start_line", "end_line", "severity", "title", "explanation", "evidence", "fix", "confidence"],
+                    },
+                },
+            },
+            "required": ["findings"],
         },
     },
 ]
@@ -79,17 +111,21 @@ CONFIG = types.GenerateContentConfig(
 )
 
 WRAPUP_NOTE = (
-    "STEP LIMIT REACHED. Do not call any tools. Using only what you have already read, write your "
-    "final answer now in the usual format. Start with the line 'INCOMPLETE REVIEW: step limit reached.' "
-    "Report only issues you actually verified. End with 'Files read:' and 'Files not read:' lines."
+    "STEP LIMIT REACHED. Call submit_report now with the issues you have already verified. "
+    "In summary, name the files you did not read."
 )
+NUDGE = "Now call submit_report with your findings (use an empty list if there are none)."
 
+# Same setup as CONFIG, but the model must call submit_report.
 WRAPUP_CONFIG = types.GenerateContentConfig(
     system_instruction=SYSTEM_PROMPT,
     tools=CONFIG.tools,
     automatic_function_calling=CONFIG.automatic_function_calling,
     tool_config=types.ToolConfig(
-        function_calling_config=types.FunctionCallingConfig(mode=types.FunctionCallingConfigMode.NONE)
+        function_calling_config=types.FunctionCallingConfig(
+            mode=types.FunctionCallingConfigMode.ANY,
+            allowed_function_names=["submit_report"],
+        )
     ),
 )
 
@@ -103,10 +139,14 @@ class TraceEvent:
 
 @dataclass
 class AgentResult:
-    final_text: str
-    complete: bool      # False if we stopped at the step cap or on an error
+    final_text: str          # the report summary (or the model's plain-text answer if it never submitted)
+    complete: bool           # False if we stopped at the step cap or on an error
     steps_used: int
     trace: list[TraceEvent]
+    findings: list[Finding] = field(default_factory=list)
+    rejected: list[str] = field(default_factory=list)    # findings dropped for failing verification
+    files_read: list[str] = field(default_factory=list)  # files the agent actually read, from the tool log
+    structured: bool = False  # True if the answer came from submit_report
 
 
 def _event(trace: list[TraceEvent], step: int, type_: str, data: str) -> None:
@@ -187,22 +227,51 @@ def _generate(contents, config=CONFIG):
                     time.sleep(wait)
     raise last
 
-def _wrap_up(contents, trace: list[TraceEvent], step: int) -> AgentResult:
-    """Out of steps: ask for an answer from what has been read, with tools turned off."""
+def _check_report(tools: RepoTools, args: dict) -> tuple[list[Finding], str, list[str]]:
+    """Validate a submit_report call. Returns (verified findings, summary, problems)."""
+    items = args.get("findings")
+    if not isinstance(items, list):
+        return [], "", ["findings must be a list (use [] if there are none)"]
+    verified, problems = [], []
+    for n, item in enumerate(items, start=1):
+        try:
+            f = Finding.model_validate(item)
+        except ValidationError as e:
+            msg = "; ".join(f"{'.'.join(map(str, err['loc']))}: {err['msg']}" for err in e.errors())
+            problems.append(f"finding {n}: {msg}")
+            continue
+        why = tools.check_evidence(f.file, f.start_line, f.end_line, f.evidence)
+        if why:
+            problems.append(f"finding {n} ({f.file}:{f.start_line}): {why}")
+            continue
+        verified.append(f)
+    return verified, str(args.get("summary") or ""), problems
+
+
+def _wrap_up(contents, tools: RepoTools, trace: list[TraceEvent], step: int, files_read: set) -> AgentResult:
+    """Out of steps: force one submit_report call from what has been read so far."""
     contents[-1].parts.append(types.Part(text=WRAPUP_NOTE))  # same turn as the last tool results
+    read = sorted(files_read)
     try:
         response = _generate(contents, WRAPUP_CONFIG)
-        text = "" if response.function_calls else (response.text or "")
+        call = next((c for c in (response.function_calls or []) if c.name == "submit_report"), None)
     except Exception as e:
         _event(trace, step, "error", f"wrap-up failed: {type(e).__name__}")
-        return AgentResult("", False, step, trace)
-    _event(trace, step, "model_text", text)
-    return AgentResult(text, False, step, trace)
+        return AgentResult("", False, step, trace, files_read=read)
+    if call is None:
+        return AgentResult("", False, step, trace, files_read=read)
+    findings, summary, problems = _check_report(tools, _clean_args(dict(call.args or {})))
+    _event(trace, step, "submit_report", f"{len(findings)} verified, {len(problems)} rejected")
+    return AgentResult("INCOMPLETE REVIEW: step limit reached. " + summary, False, step, trace,
+                       findings, problems, read, True)
+
 
 def review_repo(repo_path: str, leads: list[Lead], max_steps: int = MAX_STEPS) -> AgentResult:
     tools = RepoTools(repo_path)
-    dispatch = {"read_lines": tools.read_lines, "search": tools.search, "list_files": tools.list_files}
+    dispatch = {"read_lines": tools.read_lines, "search": tools.search, "list_files": tools.list_files}  # allowlist
     trace: list[TraceEvent] = []
+    files_read: set[str] = set()
+    nudged = False
 
     contents = [types.Content(role="user", parts=[types.Part(text=build_prompt(leads))])]
 
@@ -211,31 +280,48 @@ def review_repo(repo_path: str, leads: list[Lead], max_steps: int = MAX_STEPS) -
 
         if not response.candidates or response.candidates[0].content is None:
             _event(trace, step, "error", "model returned no content")
-            return AgentResult("", False, step, trace)
+            return AgentResult("", False, step, trace, files_read=sorted(files_read))
 
         # Keep the model's turn exactly as returned
         contents.append(response.candidates[0].content)
 
         calls = response.function_calls or []
-        if not calls:  # no tool requested: the model is done
+        if not calls:  # plain text instead of a report
             text = response.text or ""
             _event(trace, step, "model_text", text)
-            return AgentResult(text, True, step, trace)
+            if not nudged and step < max_steps:  # ask once for a structured report
+                nudged = True
+                contents.append(types.Content(role="user", parts=[types.Part(text=NUDGE)]))
+                continue
+            return AgentResult(text, True, step, trace, files_read=sorted(files_read))
 
-        parts = []
+        parts, accepted = [], None
         for i, call in enumerate(calls):
             args = _clean_args(dict(call.args or {}))
             _event(trace, step, "tool_call", f"{call.name}({args})")
             if i >= MAX_CALLS_PER_STEP:
                 result = "ERROR: too many tool calls in one step; request fewer."
+            elif call.name == "submit_report":
+                findings, summary, problems = _check_report(tools, args)
+                if problems:
+                    result = "ERROR: fix these findings and call submit_report again:\n" + "\n".join(problems)
+                else:
+                    accepted = (findings, summary)
+                    result = "report accepted"
             else:
                 result = _run_tool(dispatch, call.name, args)
+                if call.name == "read_lines" and not result.startswith("ERROR"):
+                    files_read.add(os.path.normpath(str(args.get("path", ""))))
             _event(trace, step, "tool_result", result)
             parts.append(types.Part.from_function_response(name=call.name, response={"result": result}))
+
+        if accepted:
+            return AgentResult(accepted[1], True, step, trace, accepted[0], [], sorted(files_read), True)
         contents.append(types.Content(role="user", parts=parts))
 
     _event(trace, max_steps, "limit", f"stopped after {max_steps} steps")
-    return _wrap_up(contents, trace, max_steps)
+    return _wrap_up(contents, tools, trace, max_steps, files_read)
+
 
 
 if __name__ == "__main__":

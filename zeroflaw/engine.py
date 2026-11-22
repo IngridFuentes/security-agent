@@ -29,6 +29,8 @@ def real_static(target: Path) -> list:
 
 
 def _describe(name: str, rest: str) -> str:
+    if name == "submit_report":
+        return "submitting report"
     try:
         args = ast.literal_eval(rest)
     except (ValueError, SyntaxError):
@@ -41,6 +43,14 @@ def _describe(name: str, rest: str) -> str:
         return args.get("path") or "all files"
     return rest[:60]
 
+def _code_around(target: Path, f) -> tuple[str | None, int]:
+    """The cited lines plus one line of context, for the finding panel."""
+    try:
+        lines = (target / f.file).read_text(errors="replace").splitlines()
+    except OSError:
+        return None, f.start_line
+    start = max(1, f.start_line - 1)
+    return "\n".join(lines[start - 1 : min(len(lines), f.end_line + 1)]), start
 
 def real_review(target: Path, leads: list, max_steps: int, on_step: OnStep, on_note: OnNote) -> dict:
     from backend.reviewer import review_repo
@@ -73,11 +83,21 @@ def real_review(target: Path, leads: list, max_steps: int, on_step: OnStep, on_n
         logger.setLevel(old_level)
         logger.propagate = old_propagate
 
+    findings = []
+    for f in result.findings:
+        d = f.model_dump(mode="json")
+        d["line"], d["description"] = f.start_line, f.explanation  # names the panel code expects
+        d["code"], d["code_start"] = _code_around(target, f)
+        findings.append(d)
+
     return {
         "steps": result.steps_used,
         "complete": result.complete,
         "text": result.final_text,
-        "findings": [],  # filled once the agent returns structured Finding objects
+        "findings": findings,
+        "rejected": result.rejected,
+        "files_read": result.files_read,
+        "structured": result.structured,
         "trace": [asdict(e) for e in result.trace],
     }
 

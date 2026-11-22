@@ -15,7 +15,7 @@ console = Console()
 ACCENT = "#fb923c"
 PURPLE = "#818cf8"
 MUTED = "#8b949e"
-SEVERITY_STYLE = {"high": "red", "medium": "yellow", "low": "blue"}
+SEVERITY_STYLE = {"critical": "bright_red", "high": "red", "medium": "yellow", "low": "blue"}
 
 LOGO = [
     "███████╗███████╗██████╗  ██████╗ ███████╗██╗      █████╗ ██╗    ██╗",
@@ -73,7 +73,7 @@ def note(text: str) -> None:
 
 
 def step_done(n: int, tool: str, detail: str) -> None:
-    console.print(Text.assemble(("  ✓ ", "green"), (f"Step {n}  {tool:<12} {detail}", MUTED)))
+    console.print(Text.assemble(("  ✓ ", "green"), (f"Step {n}  {tool:<14} {detail}", MUTED)))
 
 
 def working(message: str):
@@ -102,6 +102,7 @@ def _snippet(finding: dict) -> Syntax | None:
         highlight_lines={line} if line else None,
         theme="ansi_dark",
         background_color="default",
+        word_wrap=True
     )
 
 
@@ -119,8 +120,11 @@ def finding_panel(finding: dict) -> Panel:
     fix = finding.get("fix")
     if fix:
         parts += [Text(), Text("Suggested fix", style="bold")]
-        parts.append(Text(f"- {fix['old']}", style="red"))
-        parts.append(Text(f"+ {fix['new']}", style="green"))
+        if isinstance(fix, dict):
+            parts.append(Text(f"- {fix['old']}", style="red"))
+            parts.append(Text(f"+ {fix['new']}", style="green"))
+        else:
+            parts.append(Text(str(fix)))
 
     meta = " · ".join(
         x for x in (finding.get("cwe"), f"confidence: {finding['confidence']}" if finding.get("confidence") else None) if x
@@ -145,7 +149,7 @@ def print_summary(findings: list[dict]) -> None:
     table = Table(box=box.HEAVY_HEAD, header_style="bold")
     table.add_column("Severity")
     table.add_column("Count", justify="right")
-    for sev in ("high", "medium", "low"):
+    for sev in ("critical", "high", "medium", "low"):
         count = sum(1 for f in findings if str(f.get("severity", "")).lower() == sev)
         table.add_row(Text.assemble(("● ", SEVERITY_STYLE[sev]), sev.capitalize()), str(count))
     console.print(table)

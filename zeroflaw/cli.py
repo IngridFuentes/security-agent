@@ -87,12 +87,14 @@ def scan(
 
     findings = result["findings"]
     if findings:
-        order = {"high": 0, "medium": 1, "low": 2}
-        for f in sorted(findings, key=lambda f: order.get(str(f.get("severity")).lower(), 3)):
+        order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+        for f in sorted(findings, key=lambda f: order.get(str(f.get("severity")).lower(), 4)):
             ui.console.print(ui.finding_panel(f))
             ui.console.print()
         ui.print_summary(findings)
-    elif result.get("text"):
+    elif result.get("structured"):
+        ui.console.print(Text("  ✓ No verified issues found", style="green"))
+    elif result.get("text"):  # the model answered in plain text instead of submitting a report
         ui.console.print(
             Panel(
                 Markdown(result["text"]),
@@ -104,8 +106,18 @@ def scan(
             )
         )
 
+    if result.get("structured") and result.get("text"):
+        ui.console.print(Text(f"\n  {result['text']}", style=ui.MUTED))
+    if result.get("rejected"):
+        ui.console.print(Text(
+            f"\n  ⚠ {len(result['rejected'])} finding(s) dropped: they could not be verified against the code",
+            style="yellow",
+        ))
+    if result.get("files_read"):
+        ui.console.print(Text(f"  Read {len(result['files_read'])} of {len(files)} Python files", style=ui.MUTED))
+
     report.write_text(json.dumps({"target": str(target), "model": model, **result}, indent=2, default=str))
     ui.console.print(f"\n  Report saved → {report}", style=ui.MUTED)
 
-    has_high = any(str(f.get("severity")).lower() == "high" for f in findings)
+    has_high = any(str(f.get("severity")).lower() in ("critical", "high") for f in findings)
     raise typer.Exit(1 if has_high else (0 if result["complete"] else 2))

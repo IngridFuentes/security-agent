@@ -29,9 +29,10 @@ class Finding(BaseModel):
     cwe: str | None = Field(default=None, pattern=r"^CWE-\d+$")
     title: str
     explanation: str
+    fix: str = Field(default="", description="How to fix it, ideally with a short code example")
     evidence: str = Field(description="Exact code copied from the file")
     confidence: float = Field(ge=0, le=1)
-    lead_ids: list[str] = []  # empty = LLM found it on its own
+    lead_ids: list[str] = [] 
 
     @model_validator(mode="after")
     def lines_in_order(self):
