@@ -69,7 +69,7 @@ The result is a short, verifiable list of issues in your terminal, designed to b
 **Requirements:** Python 3.14+, a [Gemini API key](https://aistudio.google.com/), and [Semgrep](https://semgrep.dev/).
 
 ```bash
-git clone https://github.com/<my-username>/security-agent.git
+git clone https://github.com/IngridFuentes/security-agent.git
 cd security-agent
 
 python3 -m venv .venv
