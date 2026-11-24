@@ -9,7 +9,7 @@ from google import genai
 from google.genai import errors, types
 from pydantic import ValidationError
 
-from backend.schemas import Finding, Lead
+from backend.schemas import Finding, Lead, Severity
 from backend.tools import RepoTools
 
 load_dotenv()
@@ -32,7 +32,8 @@ Rules:
 4. You have a limited number of steps. Start with the highest-severity leads and treat leads that describe the same problem as one issue.
 5. When finished, call submit_report exactly once with every issue you verified: file, start_line, end_line, severity (low, medium, high or critical), cwe (like "CWE-78"), title, explanation, evidence (one line of code copied exactly from the file at those lines), fix, confidence (0 to 1), and the lead ids it came from. Use an empty findings list if you found nothing. In summary, say in a sentence or two which leads you judged to be false positives and why, and name any files you did not read. Never say you reviewed the whole repository unless you read every source file. If submit_report returns errors, correct those findings and call it again.
 6. Also report any other security problems you notice in code you read, such as hardcoded secrets or keys, even if no lead points at them.
-7. Judge the code as if it were deployed in production. Do not dismiss a lead or a problem because the project looks like a demo, tutorial, test, or intentionally vulnerable app. Call a lead a false positive only if the code is genuinely not vulnerable, and say why. Never cite a file you have not read."""
+7. Judge the code as if it were deployed in production. Do not dismiss a lead or a problem because the project looks like a demo, tutorial, test, or intentionally vulnerable app. Call a lead a false positive only if the code is genuinely not vulnerable, and say why. Never cite a file you have not read.
+8. Severity guide. critical: remotely exploitable code execution or full compromise with no preconditions (command injection, eval of user input, unsafe deserialization). high: serious exploitable flaws that need some condition (SQL injection, hardcoded production secrets, debug mode exposing a debugger). medium: weaknesses that raise risk but need another flaw to exploit (container running as root, missing security headers). low: hardening advice and minor information leaks. Use the same severity for the same kind of problem every time."""
 
 TOOL_DECLARATIONS = [
     {
@@ -106,6 +107,7 @@ TOOL_DECLARATIONS = [
 
 CONFIG = types.GenerateContentConfig(
     system_instruction=SYSTEM_PROMPT,
+    temperature=0.0,
     tools=[types.Tool(function_declarations=TOOL_DECLARATIONS)],
     # We run the loop ourselves so we control the step cap and the trace.
     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
@@ -120,6 +122,7 @@ NUDGE = "Now call submit_report with your findings (use an empty list if there a
 # Same setup as CONFIG, but the model must call submit_report.
 WRAPUP_CONFIG = types.GenerateContentConfig(
     system_instruction=SYSTEM_PROMPT,
+    temperature=0.0,
     tools=CONFIG.tools,
     automatic_function_calling=CONFIG.automatic_function_calling,
     tool_config=types.ToolConfig(
@@ -228,6 +231,13 @@ def _generate(contents, config=CONFIG):
                     time.sleep(wait)
     raise last
 
+SEVERITY_BY_CWE = {
+    "CWE-78": "critical", "CWE-77": "critical", "CWE-94": "critical", "CWE-502": "critical",
+    "CWE-89": "high", "CWE-798": "high", "CWE-22": "high", "CWE-918": "high",
+    "CWE-327": "medium", "CWE-328": "medium", "CWE-489": "medium", "CWE-215": "medium",
+    "CWE-250": "low",
+}
+
 def _check_report(tools: RepoTools, args: dict) -> tuple[list[Finding], str, list[str]]:
     """Validate a submit_report call. Returns (verified findings, summary, problems)."""
     items = args.get("findings")
@@ -241,6 +251,8 @@ def _check_report(tools: RepoTools, args: dict) -> tuple[list[Finding], str, lis
             msg = "; ".join(f"{'.'.join(map(str, err['loc']))}: {err['msg']}" for err in e.errors())
             problems.append(f"finding {n}: {msg}")
             continue
+
+        f.severity = Severity(SEVERITY_BY_CWE.get(f.cwe, f.severity.value))  # known CWEs get a fixed severity
         why = tools.check_evidence(f.file, f.start_line, f.end_line, f.evidence)
         if why:
             problems.append(f"finding {n} ({f.file}:{f.start_line}): {why}")

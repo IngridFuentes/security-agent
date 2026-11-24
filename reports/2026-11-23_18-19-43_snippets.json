@@ -1,0 +1,54 @@
+{
+  "target": "snippets",
+  "model": "demo",
+  "created": "2026-11-23T18:19:43",
+  "python_files": 3,
+  "steps": 5,
+  "complete": true,
+  "text": "",
+  "findings": [
+    {
+      "severity": "high",
+      "title": "Command injection",
+      "file": "views.py",
+      "line": 42,
+      "code_start": 40,
+      "code": "def ping(request):\n    host = request.POST[\"host\"]\n    os.system(\"ping -c 1 \" + host)\n    return render(request, \"result.html\")",
+      "description": "User input flows into a shell command without sanitizing.\nAn attacker can append `; <cmd>` to run arbitrary commands.",
+      "fix": {
+        "old": "os.system(\"ping -c 1 \" + host)",
+        "new": "subprocess.run([\"ping\", \"-c\", \"1\", host], check=True)"
+      },
+      "cwe": "CWE-78",
+      "confidence": "high"
+    },
+    {
+      "severity": "medium",
+      "title": "Missing input validation",
+      "file": "views.py",
+      "line": 51,
+      "description": "The host parameter is used without checking its format.",
+      "cwe": "CWE-20",
+      "confidence": "medium"
+    },
+    {
+      "severity": "medium",
+      "title": "Verbose error messages",
+      "file": "utils.py",
+      "line": 18,
+      "description": "Exceptions are returned to the client with stack details.",
+      "cwe": "CWE-209",
+      "confidence": "medium"
+    },
+    {
+      "severity": "low",
+      "title": "Debug mode enabled",
+      "file": "settings.py",
+      "line": 9,
+      "description": "DEBUG is set to True.",
+      "cwe": "CWE-489",
+      "confidence": "high"
+    }
+  ],
+  "trace": []
+}

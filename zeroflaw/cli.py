@@ -10,6 +10,9 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.text import Text
 
+from datetime import datetime
+from .report import save_report
+
 from . import __version__, engine, ui
 
 app = typer.Typer(add_completion=False, no_args_is_help=True, help="ZeroFlaw: AI security code review for your terminal.")
@@ -38,7 +41,8 @@ def version() -> None:
 def scan(
     target: Path = typer.Argument(..., exists=True, help="Folder to review."),
     max_steps: int = typer.Option(10, "--max-steps", help="Maximum agent steps."),
-    report: Path = typer.Option(Path("zeroflaw-report.json"), "--report", help="Where to save the JSON report."),
+    report_dir: Path = typer.Option(Path("reports"), "--report-dir", help="Folder for saved reports."),
+    no_report: bool = typer.Option(False, "--no-report", help="Don't save a report."),
     no_banner: bool = typer.Option(False, "--no-banner", help="Skip the logo."),
     demo: bool = typer.Option(False, "--demo", help="Use sample data to preview the interface."),
 ) -> None:
@@ -125,8 +129,19 @@ def scan(
     if result.get("files_read"):
         ui.console.print(Text(f"  Read {read_py} of {len(files)} Python files", style=ui.MUTED))
 
-    report.write_text(json.dumps({"target": str(target), "model": model, **result}, indent=2, default=str))
-    ui.console.print(f"\n  Report saved → {report}", style=ui.MUTED)
+    # report.write_text(json.dumps({"target": str(target), "model": model, **result}, indent=2, default=str))
+    # ui.console.print(f"\n  Report saved → {report}", style=ui.MUTED)
+
+    data = {
+        "target": str(target),
+        "model": model,
+        "created": datetime.now().isoformat(timespec="seconds"),
+        "python_files": len(files),
+        **result,
+    }
+    if not no_report:
+        path = save_report(data, target, report_dir)
+        ui.console.print(f"\n  Report saved → {path}", style=ui.MUTED)
 
     has_high = any(str(f.get("severity")).lower() in ("critical", "high") for f in findings)
     partial = read_py < len(files)

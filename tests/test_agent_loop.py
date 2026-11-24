@@ -313,3 +313,11 @@ def test_report_is_accepted_at_once_when_everything_was_read(monkeypatch, repo):
     model = ScriptedModel(reply(call("read_lines", path="views.py", start_line=1, end_line=4)), submit(finding()))
     result = run(monkeypatch, repo, model)
     assert len(model.sent) == 2 and len(result.findings) == 1
+
+def test_severity_is_set_from_the_cwe_table(monkeypatch, repo):
+    model = ScriptedModel(
+        reply(call("read_lines", path="views.py", start_line=1, end_line=4)),
+        submit(finding(severity="low")),  # the model says low, but CWE-78 is critical
+    )
+    result = run(monkeypatch, repo, model)
+    assert result.findings[0].severity.value == "critical"
